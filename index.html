@@ -36,6 +36,7 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .memo.hl{background:var(--hl);border-color:var(--ink)}
 .row{display:flex;align-items:baseline;gap:10px}
 .row .time{font-size:22px;line-height:1}.end{margin-left:auto}
+.loc{margin-top:4px;font-size:11.5px;color:var(--ink2)}.loc a{color:var(--ink)}
 .tx{margin-top:6px;color:var(--ink2);white-space:pre-wrap}
 .cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
 .wd{text-align:center;font-weight:700;font-size:11px;color:var(--ink2);padding-bottom:2px}
@@ -69,7 +70,7 @@ let toastT;const toast=m=>{const t=$('#toast');t.textContent=m;clearTimeout(toas
 const db=new Promise((res,rej)=>{const r=indexedDB.open('diktafon-web',1);r.onupgradeneeded=()=>{r.result.createObjectStore('cassettes',{keyPath:'id'});r.result.createObjectStore('memos',{keyPath:'id'})};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
 const tx=async(s,mode,fn)=>{const d=await db;return new Promise((res,rej)=>{const t=d.transaction(s,mode),r=fn(t.objectStore(s));t.oncomplete=()=>res(r&&r.result);t.onerror=()=>rej(t.error)})};
 const put=(s,v)=>tx(s,'readwrite',o=>o.put(v)),del=(s,k)=>tx(s,'readwrite',o=>o.delete(k));
-const S={cass:[],memos:[],view:'home',cid:null,month:new Date(),sel:new Date(),focus:null,scroll:false,playing:null,tx:false};
+const S={cass:[],memos:[],view:'home',cid:null,month:new Date(),sel:new Date(),focus:null,scroll:false,playing:null,tx:false,geo:false};
 let rec=null;
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 async function load(){const[c,m]=await Promise.all([tx('cassettes','readonly',o=>o.getAll()),tx('memos','readonly',o=>o.getAll())]);S.cass=c;S.memos=m.sort((a,b)=>a.createdAt-b.createdAt||(a.id<b.id?-1:1))}
@@ -85,11 +86,17 @@ const au=new Audio();
 function stop(quiet){au.onended=au.onerror=null;au.pause();if(au.src)URL.revokeObjectURL(au.src);au.removeAttribute('src');S.playing=null;if(!quiet)render()}
 function play(list,i,chain){stop(true);const m=list[i];if(!m)return render();au.src=URL.createObjectURL(m.blob);S.playing=m.id;au.onended=()=>{if(chain&&list[i+1])play(list,i+1,true);else stop()};au.onerror=()=>{stop();toast('This memo could not be played.')};au.play().catch(()=>{});render()}
 
+/* location: asked only when the box is ticked; saved with the memo, never sent anywhere by this page */
+const getPos=()=>new Promise(r=>navigator.geolocation?navigator.geolocation.getCurrentPosition(p=>r({lat:+p.coords.latitude.toFixed(5),lon:+p.coords.longitude.toFixed(5),acc:Math.round(p.coords.accuracy)}),()=>r(null),{timeout:10000,maximumAge:60000}):r(null)),
+ locLink=l=>h('a',{href:`https://www.openstreetmap.org/?mlat=${l.lat}&mlon=${l.lon}#map=16/${l.lat}/${l.lon}`,target:'_blank',rel:'noopener noreferrer'},`${l.lat}, ${l.lon}`+(l.acc?` (±${l.acc} m)`:''));
+async function rmLoc(m){delete m.loc;await put('memos',m);await load();render()}
+
 /* recording */
 const tick=()=>{const b=$('#rbtn');if(b&&rec&&b.classList.contains('on'))b.textContent='Stop '+fmtMs(Date.now()-rec.t0)};
 async function startRec(){
  try{
-  const stream=await navigator.mediaDevices.getUserMedia({audio:true}),
+  const gp=S.geo?getPos():Promise.resolve(null),
+   stream=await navigator.mediaDevices.getUserMedia({audio:true}),
    mime=['audio/webm;codecs=opus','audio/mp4','audio/webm','audio/ogg'].find(t=>MediaRecorder.isTypeSupported(t))||'',
    mr=new MediaRecorder(stream,mime?{mimeType:mime}:{}),chunks=[],t0=Date.now();
   let text='',sr=null;
@@ -98,7 +105,8 @@ async function startRec(){
   mr.onstop=async()=>{
    stream.getTracks().forEach(t=>t.stop());const r=rec;rec=null;clearInterval(r.timer);
    if(sr){sr.onend=null;try{sr.stop()}catch{}await new Promise(k=>setTimeout(k,500))}
-   try{await put('memos',{id:crypto.randomUUID(),cassetteId:r.cid,createdAt:r.t0,durationMs:Date.now()-r.t0,blob:new Blob(chunks,{type:mr.mimeType||mime||'audio/webm'}),transcript:text});await load()}catch{toast('Could not save the memo. Storage may be full.')}
+   const loc=await gp;if(S.geo&&!loc)toast('Location unavailable, so this memo was saved without it.');
+   try{await put('memos',{id:crypto.randomUUID(),loc,cassetteId:r.cid,createdAt:r.t0,durationMs:Date.now()-r.t0,blob:new Blob(chunks,{type:mr.mimeType||mime||'audio/webm'}),transcript:text});await load()}catch{toast('Could not save the memo. Storage may be full.')}
    render()};
   mr.start(1000);rec={mr,cid:S.cid,t0,sr,timer:setInterval(tick,500)};render();
  }catch(e){toast('Microphone unavailable: allow access in the browser, and open this file over https or localhost if it keeps failing.')}
@@ -127,11 +135,13 @@ function tapeView(){
   h('header',0,h('button',{class:'ico','aria-label':'Back to tapes',onclick:()=>go('')},'←'),h('h1',{class:'disp'},name(c))),
   h('div',{class:'bar'},h('button',{onclick:()=>{const l=prompt('Rename tape',c.label||'');if(l!==null)editTape(x=>x.label=l.trim()||null)}},'Rename'),h('button',{onclick:()=>editTape(x=>x.hue=(x.hue+1)%6)},'Change color'),h('button',{onclick:delTape},'Delete tape'),ms.length?h('button',{onclick:()=>S.playing?stop():play(ms,0,true)},S.playing?'Stop playback':'Play whole tape'):null),
   h('div',{class:'recbox'},h('button',{id:'rbtn',class:'rec'+(mine?' on':''),disabled:rec&&!mine?'':null,onclick:()=>mine?rec.mr.stop():startRec()},mine?'Stop '+fmtMs(Date.now()-rec.t0):'Record'),
-   SR?h('label',0,h('input',{type:'checkbox',checked:S.tx?'':null,onchange:e=>S.tx=e.target.checked}),' Add a transcript while recording'):null),
+   SR?h('label',0,h('input',{type:'checkbox',checked:S.tx?'':null,onchange:e=>S.tx=e.target.checked}),' Add a transcript while recording'):null,
+   navigator.geolocation?h('label',0,h('input',{type:'checkbox',checked:S.geo?'':null,onchange:e=>S.geo=e.target.checked}),' Save my location with each memo'):null),
   ms.length?h('div',{class:'list'},ms.map((m,i)=>h('article',{class:'memo'+(S.focus===m.id?' hl':''),id:'m'+m.id},
    h('div',{class:'row'},h('span',{class:'disp time'},fmtTime(m.createdAt)),h('span',{class:'dim'},fmtDate(m.createdAt)),h('span',{class:'dim end'},fmtMs(m.durationMs))),
    m.transcript?h('p',{class:'tx'},m.transcript):null,
-   h('div',{class:'bar'},h('button',{onclick:()=>S.playing===m.id?stop():play(ms,i,false)},S.playing===m.id?'Pause':'Play'),h('button',{onclick:()=>save(m)},'Download'),h('button',{onclick:()=>delMemo(m)},'Delete'))))):h('p',{class:'empty'},'This tape is blank. Press Record to add the first memo.'))}
+   m.loc?h('p',{class:'loc'},'Recorded at ',locLink(m.loc)):null,
+   h('div',{class:'bar'},h('button',{onclick:()=>S.playing===m.id?stop():play(ms,i,false)},S.playing===m.id?'Pause':'Play'),h('button',{onclick:()=>save(m)},'Download'),m.loc?h('button',{onclick:()=>rmLoc(m)},'Remove location'):null,h('button',{onclick:()=>delMemo(m)},'Delete'))))):h('p',{class:'empty'},'This tape is blank. Press Record to add the first memo.'))}
 
 function calView(){
  const M=S.month,y=M.getFullYear(),mo=M.getMonth(),wi=(l=>l.getWeekInfo?l.getWeekInfo():l.weekInfo)(new Intl.Locale(L)),first=((wi&&wi.firstDay)||7)%7,
@@ -149,7 +159,7 @@ function calView(){
   h('div',{class:'cal'},Array.from({length:7},(_,i)=>h('span',{class:'wd'},new Date(2026,0,4+first+i).toLocaleDateString(L,{weekday:'narrow'}))),cells),
   h('div',{class:'dayhead'},h('strong',0,full(S.sel)),h('span',{class:'dim'},pl(sm.length))),
   sm.length?sm.map(m=>{const c=S.cass.find(x=>x.id===m.cassetteId);return h('button',{class:'dayrow',style:`--c:var(--h${hueOf(m.cassetteId)})`,onclick:()=>go('tape/'+m.cassetteId,m.id)},
-   h('div',{class:'row'},h('span',{class:'disp time'},fmtTime(m.createdAt)),h('strong',0,c?name(c):'Deleted tape'),h('span',{class:'dim end'},fmtMs(m.durationMs))),m.transcript?h('p',{class:'tx'},m.transcript):null)}):h('p',{class:'empty'},'Nothing recorded on this day.'))}
+   h('div',{class:'row'},h('span',{class:'disp time'},fmtTime(m.createdAt)),h('strong',0,c?name(c):'Deleted tape'),h('span',{class:'dim end'},fmtMs(m.durationMs))),m.transcript?h('p',{class:'tx'},m.transcript):null,m.loc?h('p',{class:'loc'},`${m.loc.lat}, ${m.loc.lon}`):null)}):h('p',{class:'empty'},'Nothing recorded on this day.'))}
 
 addEventListener('beforeunload',e=>{if(rec)e.preventDefault()});
 (async()=>{try{await load();if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch{$('#app').textContent='This browser is blocking storage, so tapes can’t be saved. Turn off private browsing and reload.';return}addEventListener('hashchange',route);route()})();
