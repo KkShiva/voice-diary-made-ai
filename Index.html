@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Diktafon</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jersey+10&family=Space+Mono:wght@400;700&display=swap">
+<style>
+:root{color-scheme:light dark;--paper:#F5F4EF;--surface:#fff;--ink:#211F1A;--ink2:#6F6A5E;--line:#E5E2D7;--accent:#A8781F;--rec:#C93A2B;--hl:#F3E5BE;--h0:#CE9930;--h1:#2F9C8D;--h2:#5E6CC9;--h3:#C75B41;--h4:#7C9440;--h5:#9A5FA6}
+@media(prefers-color-scheme:dark){:root{--paper:#131210;--surface:#1E1C18;--ink:#ECE8DF;--ink2:#9A9384;--line:#2C2A24;--accent:#D9A94A;--rec:#E25743;--hl:#453A20;--h0:#DFAF4C;--h1:#4FB5A6;--h2:#8290DE;--h3:#DD7A5E;--h4:#98B05A;--h5:#B47EC0}}
+*{box-sizing:border-box;margin:0}
+body{background:var(--paper);color:var(--ink);font:13px/1.45 'Space Mono',ui-monospace,Menlo,Consolas,monospace;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+main{max-width:720px;margin:0 auto;padding:0 18px 96px}
+.disp{font-family:'Jersey 10',Impact,'Arial Narrow',sans-serif;font-weight:400;letter-spacing:.03em}
+header{display:flex;align-items:center;gap:8px;padding:14px 0 12px}
+header h1{flex:1;min-width:0;font-size:30px;line-height:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button:disabled{opacity:.45;cursor:not-allowed}
+.ico{min-width:44px;height:44px;padding:0 12px;border:2px solid var(--ink);background:var(--surface);box-shadow:3px 3px 0 var(--ink);font-weight:700}
+.ico:active{transform:translate(2px,2px);box-shadow:1px 1px 0 var(--ink)}
+.fab{position:fixed;right:max(18px,env(safe-area-inset-right));bottom:max(18px,env(safe-area-inset-bottom));background:var(--ink);color:var(--paper)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.tape{display:flex;flex-direction:column;justify-content:space-between;gap:14px;min-height:92px;padding:12px;text-align:left;background:var(--surface);border:2px solid var(--ink);border-top:9px solid var(--c);box-shadow:3px 3px 0 var(--ink)}
+.tape .name{font-size:22px;line-height:1;overflow-wrap:anywhere}
+.meta,.dim{color:var(--ink2);font-size:11.5px}
+.empty{padding:36px 8px;text-align:center;color:var(--ink2);font-style:italic}
+.bar{display:flex;flex-wrap:wrap;gap:6px 14px;margin:6px 0}
+.bar button{font-weight:700;text-decoration:underline;text-underline-offset:3px;padding:6px 0}
+.recbox{display:flex;align-items:center;flex-wrap:wrap;gap:12px 18px;margin:14px 0 20px;padding:14px;border:2px solid var(--ink);background:var(--surface)}
+.rec{padding:14px 26px;background:var(--rec);color:#fff;border:2px solid var(--ink);box-shadow:3px 3px 0 var(--ink);font-weight:700;font-size:15px}
+.rec.on{background:var(--ink);color:var(--paper)}
+.list{display:grid;gap:10px}
+.memo{padding:10px 12px;background:var(--surface);border:1.5px solid var(--line);border-left:6px solid var(--c)}
+.memo.hl{background:var(--hl);border-color:var(--ink)}
+.row{display:flex;align-items:baseline;gap:10px}
+.row .time{font-size:22px;line-height:1}.end{margin-left:auto}
+.tx{margin-top:6px;color:var(--ink2);white-space:pre-wrap}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.wd{text-align:center;font-weight:700;font-size:11px;color:var(--ink2);padding-bottom:2px}
+.cell{aspect-ratio:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border:1.5px solid var(--line)}
+.cell.sel{border:2px solid var(--ink);background:var(--surface)}
+.cell .n{font-size:20px;line-height:1}.cell.today .n{color:var(--accent)}
+.dots{display:flex;gap:2px;height:5px}.dots i{width:5px;height:5px;background:var(--d)}
+.dayhead{display:flex;justify-content:space-between;gap:10px;margin:20px 0 8px}
+.dayrow{display:block;width:100%;text-align:left;padding:10px 12px;margin-bottom:8px;background:var(--surface);border:1.5px solid var(--line);border-left:6px solid var(--c)}
+.dayrow .tx{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);max-width:90vw;padding:10px 14px;background:var(--ink);color:var(--paper)}
+#toast:empty{display:none}
+</style>
+</head>
+<body>
+<main id="app"></main>
+<div id="toast" role="status"></div>
+<script>
+'use strict';
+const $=s=>document.querySelector(s),L=navigator.language||'en';
+function h(t,a,...k){const e=document.createElement(t);for(const[n,v]of Object.entries(a||{})){if(n==='class')e.className=v;else if(n.startsWith('on'))e.addEventListener(n.slice(2),v);else if(v!==false&&v!=null)e.setAttribute(n,v)}for(const c of k.flat())if(c!=null&&c!==false)e.append(c.nodeType?c:document.createTextNode(c));return e}
+const pl=n=>`${n} ${n===1?'memo':'memos'}`,
+ fmtTime=t=>new Date(t).toLocaleTimeString(L,{hour:'2-digit',minute:'2-digit'}),
+ fmtDate=t=>new Date(t).toLocaleDateString(L,{day:'numeric',month:'short',year:'numeric'}),
+ fmtMs=ms=>{const s=Math.round(ms/1000),hr=Math.floor(s/3600),m=String(Math.floor(s%3600/60)).padStart(2,'0'),x=String(s%60).padStart(2,'0');return hr?`${hr}:${m}:${x}`:`${m}:${x}`},
+ dk=d=>d.getFullYear()*10000+(d.getMonth()+1)*100+d.getDate(),
+ name=c=>c.label||'Untitled tape';
+let toastT;const toast=m=>{const t=$('#toast');t.textContent=m;clearTimeout(toastT);toastT=setTimeout(()=>t.textContent='',4000)};
+
+/* storage: IndexedDB, everything stays in this browser */
+const db=new Promise((res,rej)=>{const r=indexedDB.open('diktafon-web',1);r.onupgradeneeded=()=>{r.result.createObjectStore('cassettes',{keyPath:'id'});r.result.createObjectStore('memos',{keyPath:'id'})};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
+const tx=async(s,mode,fn)=>{const d=await db;return new Promise((res,rej)=>{const t=d.transaction(s,mode),r=fn(t.objectStore(s));t.oncomplete=()=>res(r&&r.result);t.onerror=()=>rej(t.error)})};
+const put=(s,v)=>tx(s,'readwrite',o=>o.put(v)),del=(s,k)=>tx(s,'readwrite',o=>o.delete(k));
+const S={cass:[],memos:[],view:'home',cid:null,month:new Date(),sel:new Date(),focus:null,scroll:false,playing:null,tx:false};
+let rec=null;
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+async function load(){const[c,m]=await Promise.all([tx('cassettes','readonly',o=>o.getAll()),tx('memos','readonly',o=>o.getAll())]);S.cass=c;S.memos=m.sort((a,b)=>a.createdAt-b.createdAt||(a.id<b.id?-1:1))}
+const memosOf=id=>S.memos.filter(m=>m.cassetteId===id),cur=()=>S.cass.find(c=>c.id===S.cid);
+
+/* routing: hash, so the browser back button works */
+const go=(p,focus)=>{S.focus=focus||null;S.scroll=!!focus;if(location.hash==='#/'+p)route();else location.hash='#/'+p};
+function route(){stop(true);const p=location.hash.slice(2).split('/');S.view=p[0]==='cal'?'cal':p[0]==='tape'?'tape':'home';S.cid=p[1]||null;render(false);if(S.scroll){S.scroll=false;const e=document.getElementById('m'+S.focus);if(e)e.scrollIntoView({block:'center'})}}
+function render(keep=true){const y=scrollY;$('#app').replaceChildren(S.view==='cal'?calView():S.view==='tape'?tapeView():homeView());scrollTo(0,keep?y:0)}
+
+/* playback: one player; "play whole tape" chains memos in order */
+const au=new Audio();
+function stop(quiet){au.onended=au.onerror=null;au.pause();if(au.src)URL.revokeObjectURL(au.src);au.removeAttribute('src');S.playing=null;if(!quiet)render()}
+function play(list,i,chain){stop(true);const m=list[i];if(!m)return render();au.src=URL.createObjectURL(m.blob);S.playing=m.id;au.onended=()=>{if(chain&&list[i+1])play(list,i+1,true);else stop()};au.onerror=()=>{stop();toast('This memo could not be played.')};au.play().catch(()=>{});render()}
+
+/* recording */
+const tick=()=>{const b=$('#rbtn');if(b&&rec&&b.classList.contains('on'))b.textContent='Stop '+fmtMs(Date.now()-rec.t0)};
+async function startRec(){
+ try{
+  const stream=await navigator.mediaDevices.getUserMedia({audio:true}),
+   mime=['audio/webm;codecs=opus','audio/mp4','audio/webm','audio/ogg'].find(t=>MediaRecorder.isTypeSupported(t))||'',
+   mr=new MediaRecorder(stream,mime?{mimeType:mime}:{}),chunks=[],t0=Date.now();
+  let text='',sr=null;
+  if(S.tx&&SR){sr=new SR();sr.continuous=true;sr.lang=L;sr.onresult=e=>{for(let i=e.resultIndex;i<e.results.length;i++)if(e.results[i].isFinal)text+=(text?' ':'')+e.results[i][0].transcript.trim()};sr.onend=()=>{if(rec&&rec.sr===sr)try{sr.start()}catch{}};try{sr.start()}catch{}}
+  mr.ondataavailable=e=>{if(e.data.size)chunks.push(e.data)};
+  mr.onstop=async()=>{
+   stream.getTracks().forEach(t=>t.stop());const r=rec;rec=null;clearInterval(r.timer);
+   if(sr){sr.onend=null;try{sr.stop()}catch{}await new Promise(k=>setTimeout(k,500))}
+   try{await put('memos',{id:crypto.randomUUID(),cassetteId:r.cid,createdAt:r.t0,durationMs:Date.now()-r.t0,blob:new Blob(chunks,{type:mr.mimeType||mime||'audio/webm'}),transcript:text});await load()}catch{toast('Could not save the memo. Storage may be full.')}
+   render()};
+  mr.start(1000);rec={mr,cid:S.cid,t0,sr,timer:setInterval(tick,500)};render();
+ }catch(e){toast('Microphone unavailable: allow access in the browser, and open this file over https or localhost if it keeps failing.')}
+}
+
+/* tape actions */
+async function newTape(){const l=prompt('Name this tape');if(l===null)return;const c={id:crypto.randomUUID(),label:l.trim()||null,hue:Math.floor(Math.random()*6),createdAt:Date.now()};await put('cassettes',c);await load();go('tape/'+c.id)}
+async function editTape(fn){const c=cur();fn(c);await put('cassettes',c);await load();render()}
+async function delTape(){const c=cur();if(rec&&rec.cid===c.id)return toast('Stop recording first.');const ms=memosOf(c.id);if(!confirm(`Delete “${name(c)}” and its ${pl(ms.length)}? This can’t be undone.`))return;stop(true);for(const m of ms)await del('memos',m.id);await del('cassettes',c.id);await load();go('')}
+async function delMemo(m){if(!confirm('Delete this memo? This can’t be undone.'))return;if(S.playing===m.id)stop(true);await del('memos',m.id);await load();render()}
+function save(m){const u=URL.createObjectURL(m.blob),t=m.blob.type,a=h('a',{href:u,download:`diktafon-${new Date(m.createdAt).toISOString().slice(0,16).replace(/[:T]/g,'-')}.${t.includes('mp4')?'m4a':t.includes('ogg')?'ogg':'webm'}`});a.click();setTimeout(()=>URL.revokeObjectURL(u),1e4)}
+
+/* views */
+function homeView(){
+ const act=c=>{const l=memosOf(c.id).at(-1);return l?l.createdAt:c.createdAt};
+ return h('div',0,
+  h('header',0,h('h1',{class:'disp'},'Diktafon'),h('button',{class:'ico',onclick:()=>go('cal')},'Calendar')),
+  S.cass.length?h('div',{class:'grid'},[...S.cass].sort((a,b)=>act(b)-act(a)).map(c=>{const ms=memosOf(c.id),l=ms.at(-1);
+   return h('button',{class:'tape',style:`--c:var(--h${c.hue})`,onclick:()=>go('tape/'+c.id)},h('span',{class:'disp name'},name(c)),h('span',{class:'meta'},pl(ms.length)+(l?`, last ${fmtDate(l.createdAt)}`:'')))})):h('p',{class:'empty'},'No tapes yet. Make one, then press Record.'),
+  h('button',{class:'ico fab',onclick:newTape},'+ New tape'))}
+
+function tapeView(){
+ const c=cur();if(!c)return h('div',0,h('header',0,h('button',{class:'ico',onclick:()=>go('')},'Back')),h('p',{class:'empty'},'This tape no longer exists.'));
+ const ms=memosOf(c.id),mine=rec&&rec.cid===c.id;
+ return h('div',{style:`--c:var(--h${c.hue})`},
+  h('header',0,h('button',{class:'ico','aria-label':'Back to tapes',onclick:()=>go('')},'←'),h('h1',{class:'disp'},name(c))),
+  h('div',{class:'bar'},h('button',{onclick:()=>{const l=prompt('Rename tape',c.label||'');if(l!==null)editTape(x=>x.label=l.trim()||null)}},'Rename'),h('button',{onclick:()=>editTape(x=>x.hue=(x.hue+1)%6)},'Change color'),h('button',{onclick:delTape},'Delete tape'),ms.length?h('button',{onclick:()=>S.playing?stop():play(ms,0,true)},S.playing?'Stop playback':'Play whole tape'):null),
+  h('div',{class:'recbox'},h('button',{id:'rbtn',class:'rec'+(mine?' on':''),disabled:rec&&!mine?'':null,onclick:()=>mine?rec.mr.stop():startRec()},mine?'Stop '+fmtMs(Date.now()-rec.t0):'Record'),
+   SR?h('label',0,h('input',{type:'checkbox',checked:S.tx?'':null,onchange:e=>S.tx=e.target.checked}),' Add a transcript while recording'):null),
+  ms.length?h('div',{class:'list'},ms.map((m,i)=>h('article',{class:'memo'+(S.focus===m.id?' hl':''),id:'m'+m.id},
+   h('div',{class:'row'},h('span',{class:'disp time'},fmtTime(m.createdAt)),h('span',{class:'dim'},fmtDate(m.createdAt)),h('span',{class:'dim end'},fmtMs(m.durationMs))),
+   m.transcript?h('p',{class:'tx'},m.transcript):null,
+   h('div',{class:'bar'},h('button',{onclick:()=>S.playing===m.id?stop():play(ms,i,false)},S.playing===m.id?'Pause':'Play'),h('button',{onclick:()=>save(m)},'Download'),h('button',{onclick:()=>delMemo(m)},'Delete'))))):h('p',{class:'empty'},'This tape is blank. Press Record to add the first memo.'))}
+
+function calView(){
+ const M=S.month,y=M.getFullYear(),mo=M.getMonth(),wi=(l=>l.getWeekInfo?l.getWeekInfo():l.weekInfo)(new Intl.Locale(L)),first=((wi&&wi.firstDay)||7)%7,
+  blanks=(new Date(y,mo,1).getDay()-first+7)%7,days=new Date(y,mo+1,0).getDate(),by={},today=dk(new Date()),sel=dk(S.sel),
+  hueOf=id=>(S.cass.find(c=>c.id===id)||{hue:0}).hue,full=d=>d.toLocaleDateString(L,{dateStyle:'full'});
+ for(const m of S.memos)(by[dk(new Date(m.createdAt))]??=[]).push(m);
+ const shift=d=>{S.month=new Date(y,mo+d,1);render()},cells=[];
+ for(let i=0;i<blanks;i++)cells.push(h('span'));
+ for(let d=1;d<=days;d++){const date=new Date(y,mo,d),k=dk(date),ms=by[k]||[],hues=[...new Set(ms.map(m=>hueOf(m.cassetteId)))].slice(0,3);
+  cells.push(h('button',{class:'cell'+(k===sel?' sel':'')+(k===today?' today':''),'aria-pressed':String(k===sel),'aria-label':full(date)+(ms.length?', '+pl(ms.length):''),onclick:()=>{S.sel=date;render()}},h('span',{class:'disp n'},d),h('span',{class:'dots'},hues.map(x=>h('i',{style:`--d:var(--h${x})`})))))}
+ const sm=by[sel]||[];
+ return h('div',0,
+  h('header',0,h('button',{class:'ico','aria-label':'Back to tapes',onclick:()=>go('')},'←'),h('h1',{class:'disp'},M.toLocaleDateString(L,{month:'long',year:'numeric'})),
+   h('button',{class:'ico',onclick:()=>{S.month=new Date();S.sel=new Date();render()}},'Today'),h('button',{class:'ico','aria-label':'Previous month',onclick:()=>shift(-1)},'‹'),h('button',{class:'ico','aria-label':'Next month',onclick:()=>shift(1)},'›')),
+  h('div',{class:'cal'},Array.from({length:7},(_,i)=>h('span',{class:'wd'},new Date(2026,0,4+first+i).toLocaleDateString(L,{weekday:'narrow'}))),cells),
+  h('div',{class:'dayhead'},h('strong',0,full(S.sel)),h('span',{class:'dim'},pl(sm.length))),
+  sm.length?sm.map(m=>{const c=S.cass.find(x=>x.id===m.cassetteId);return h('button',{class:'dayrow',style:`--c:var(--h${hueOf(m.cassetteId)})`,onclick:()=>go('tape/'+m.cassetteId,m.id)},
+   h('div',{class:'row'},h('span',{class:'disp time'},fmtTime(m.createdAt)),h('strong',0,c?name(c):'Deleted tape'),h('span',{class:'dim end'},fmtMs(m.durationMs))),m.transcript?h('p',{class:'tx'},m.transcript):null)}):h('p',{class:'empty'},'Nothing recorded on this day.'))}
+
+addEventListener('beforeunload',e=>{if(rec)e.preventDefault()});
+(async()=>{try{await load();if(navigator.storage&&navigator.storage.persist)navigator.storage.persist()}catch{$('#app').textContent='This browser is blocking storage, so tapes can’t be saved. Turn off private browsing and reload.';return}addEventListener('hashchange',route);route()})();
+</script>
+</body>
+</html>
