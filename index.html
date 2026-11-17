@@ -170,7 +170,7 @@ addEventListener('drop',e=>{if(S.view==='tape'){e.preventDefault();addFiles([...
 function homeView(){
  const act=c=>Math.max(c.createdAt,...memosOf(c.id).slice(-1).map(m=>m.createdAt),...filesOf(c.id).slice(-1).map(f=>f.createdAt));
  return h('div',0,
-  h('header',0,h('h1',{class:'disp'},'Diktafon'),h('button',{class:'ico',onclick:()=>go('cal')},'Calendar')),
+  h('header',0,h('h1',{class:'disp'},'VOICE DIARY'),h('button',{class:'ico',onclick:()=>go('cal')},'Calendar')),
   S.cass.length?h('div',{class:'grid'},[...S.cass].sort((a,b)=>act(b)-act(a)).map(c=>{const ms=memosOf(c.id),l=ms.at(-1),nf=filesOf(c.id).length;
    return h('button',{class:'tape',style:`--c:var(--h${c.hue})`,onclick:()=>go('tape/'+c.id)},h('span',{class:'disp name'},name(c)),h('span',{class:'meta'},pl(ms.length)+(nf?`, ${fl(nf)}`:'')+(l?`, last ${fmtDate(l.createdAt)}`:'')))})):h('p',{class:'empty'},'No tapes yet. Make one, then press Record.'),
   h('button',{class:'ico fab',onclick:newTape},'+ New tape'))}
