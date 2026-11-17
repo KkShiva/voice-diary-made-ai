@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Diktafon</title>
+<title>VOICE DIARY</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Jersey+10&family=Space+Mono:wght@400;700&display=swap">
 <style>
@@ -47,6 +47,21 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .dayhead{display:flex;justify-content:space-between;gap:10px;margin:20px 0 8px}
 .dayrow{display:block;width:100%;text-align:left;padding:10px 12px;margin-bottom:8px;background:var(--surface);border:1.5px solid var(--line);border-left:6px solid var(--c)}
 .dayrow .tx{display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+h2.sec{font-size:22px;margin:24px 0 8px;font-weight:400}
+.grow{flex:1;min-width:0;overflow-wrap:anywhere}
+.files{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
+.file{display:flex;flex-direction:column;gap:6px;min-width:0;padding:8px;background:var(--surface);border:1.5px solid var(--line);border-top:6px solid var(--c)}
+.file .th,.doc{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;background:var(--line)}
+.file video.th{object-fit:contain;background:#000}
+.file audio{width:100%}.thb{padding:0;display:block}
+.doc{display:grid;place-items:center;font-size:34px}
+.fn{font-weight:700;overflow-wrap:anywhere}
+dialog.lb{width:min(94vw,900px);max-height:92vh;overflow:auto;margin:auto;padding:12px;background:var(--paper);color:var(--ink);border:2px solid var(--ink);box-shadow:4px 4px 0 var(--ink)}
+dialog.lb::backdrop{background:rgba(0,0,0,.6)}
+.lb img,.lb video{display:block;max-width:100%;max-height:75vh;margin:10px auto 0}
+.lb audio{width:100%;margin-top:10px}
+.lb iframe{width:100%;height:75vh;border:0;margin-top:10px;background:#fff}
+.pv{margin-top:10px;max-height:70vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;padding:10px;background:var(--surface)}
 #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);max-width:90vw;padding:10px 14px;background:var(--ink);color:var(--paper)}
 #toast:empty{display:none}
 </style>
@@ -67,18 +82,19 @@ const pl=n=>`${n} ${n===1?'memo':'memos'}`,
 let toastT;const toast=m=>{const t=$('#toast');t.textContent=m;clearTimeout(toastT);toastT=setTimeout(()=>t.textContent='',4000)};
 
 /* storage: IndexedDB, everything stays in this browser */
-const db=new Promise((res,rej)=>{const r=indexedDB.open('diktafon-web',1);r.onupgradeneeded=()=>{r.result.createObjectStore('cassettes',{keyPath:'id'});r.result.createObjectStore('memos',{keyPath:'id'})};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
+const db=new Promise((res,rej)=>{const r=indexedDB.open('diktafon-web',2);r.onupgradeneeded=()=>{for(const n of['cassettes','memos','files'])if(!r.result.objectStoreNames.contains(n))r.result.createObjectStore(n,{keyPath:'id'})};r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
 const tx=async(s,mode,fn)=>{const d=await db;return new Promise((res,rej)=>{const t=d.transaction(s,mode),r=fn(t.objectStore(s));t.oncomplete=()=>res(r&&r.result);t.onerror=()=>rej(t.error)})};
 const put=(s,v)=>tx(s,'readwrite',o=>o.put(v)),del=(s,k)=>tx(s,'readwrite',o=>o.delete(k));
-const S={cass:[],memos:[],view:'home',cid:null,month:new Date(),sel:new Date(),focus:null,scroll:false,playing:null,tx:false,geo:false};
+const S={cass:[],memos:[],files:[],view:'home',cid:null,month:new Date(),sel:new Date(),focus:null,scroll:false,playing:null,tx:false,geo:false};
 let rec=null;
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-async function load(){const[c,m]=await Promise.all([tx('cassettes','readonly',o=>o.getAll()),tx('memos','readonly',o=>o.getAll())]);S.cass=c;S.memos=m.sort((a,b)=>a.createdAt-b.createdAt||(a.id<b.id?-1:1))}
-const memosOf=id=>S.memos.filter(m=>m.cassetteId===id),cur=()=>S.cass.find(c=>c.id===S.cid);
+async function load(){const[c,m,f]=await Promise.all(['cassettes','memos','files'].map(n=>tx(n,'readonly',o=>o.getAll())));S.cass=c;S.files=f.sort((a,b)=>a.createdAt-b.createdAt);S.memos=m.sort((a,b)=>a.createdAt-b.createdAt||(a.id<b.id?-1:1))}
+const memosOf=id=>S.memos.filter(m=>m.cassetteId===id),filesOf=id=>S.files.filter(f=>f.cassetteId===id),fl=n=>`${n} ${n===1?'file':'files'}`,cur=()=>S.cass.find(c=>c.id===S.cid);
 
 /* routing: hash, so the browser back button works */
 const go=(p,focus)=>{S.focus=focus||null;S.scroll=!!focus;if(location.hash==='#/'+p)route();else location.hash='#/'+p};
-function route(){stop(true);const p=location.hash.slice(2).split('/');S.view=p[0]==='cal'?'cal':p[0]==='tape'?'tape':'home';S.cid=p[1]||null;render(false);if(S.scroll){S.scroll=false;const e=document.getElementById('m'+S.focus);if(e)e.scrollIntoView({block:'center'})}}
+const urls=new Map(),url=f=>{let u=urls.get(f.id);if(!u){u=URL.createObjectURL(f.blob);urls.set(f.id,u)}return u},revokeAll=()=>{urls.forEach(u=>URL.revokeObjectURL(u));urls.clear()};
+function route(){stop(true);revokeAll();document.querySelectorAll('dialog').forEach(d=>d.close());const p=location.hash.slice(2).split('/');S.view=p[0]==='cal'?'cal':p[0]==='tape'?'tape':'home';S.cid=p[1]||null;render(false);if(S.scroll){S.scroll=false;const e=document.getElementById('m'+S.focus);if(e)e.scrollIntoView({block:'center'})}}
 function render(keep=true){const y=scrollY;$('#app').replaceChildren(S.view==='cal'?calView():S.view==='tape'?tapeView():homeView());scrollTo(0,keep?y:0)}
 
 /* playback: one player; "play whole tape" chains memos in order */
@@ -115,25 +131,56 @@ async function startRec(){
 /* tape actions */
 async function newTape(){const l=prompt('Name this tape');if(l===null)return;const c={id:crypto.randomUUID(),label:l.trim()||null,hue:Math.floor(Math.random()*6),createdAt:Date.now()};await put('cassettes',c);await load();go('tape/'+c.id)}
 async function editTape(fn){const c=cur();fn(c);await put('cassettes',c);await load();render()}
-async function delTape(){const c=cur();if(rec&&rec.cid===c.id)return toast('Stop recording first.');const ms=memosOf(c.id);if(!confirm(`Delete “${name(c)}” and its ${pl(ms.length)}? This can’t be undone.`))return;stop(true);for(const m of ms)await del('memos',m.id);await del('cassettes',c.id);await load();go('')}
+async function delTape(){const c=cur();if(rec&&rec.cid===c.id)return toast('Stop recording first.');const ms=memosOf(c.id),fs=filesOf(c.id);if(!confirm(`Delete “${name(c)}” with ${pl(ms.length)} and ${fl(fs.length)}? This can’t be undone.`))return;stop(true);for(const m of ms)await del('memos',m.id);for(const f of fs)await del('files',f.id);await del('cassettes',c.id);await load();go('')}
 async function delMemo(m){if(!confirm('Delete this memo? This can’t be undone.'))return;if(S.playing===m.id)stop(true);await del('memos',m.id);await load();render()}
-function save(m){const u=URL.createObjectURL(m.blob),t=m.blob.type,a=h('a',{href:u,download:`diktafon-${new Date(m.createdAt).toISOString().slice(0,16).replace(/[:T]/g,'-')}.${t.includes('mp4')?'m4a':t.includes('ogg')?'ogg':'webm'}`});a.click();setTimeout(()=>URL.revokeObjectURL(u),1e4)}
+function dl(blob,fname){const u=URL.createObjectURL(blob),a=h('a',{href:u,download:fname});document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),1e4)}
+function save(m){const t=m.blob.type;dl(m.blob,`diktafon-${new Date(m.createdAt).toISOString().slice(0,16).replace(/[:T]/g,'-')}.${t.includes('mp4')?'m4a':t.includes('ogg')?'ogg':'webm'}`)}
+
+/* files: any type, stored in the browser next to the memos */
+const fmtSize=b=>b<1024?b+' B':b<1048576?(b/1024).toFixed(0)+' KB':b<1073741824?(b/1048576).toFixed(1)+' MB':(b/1073741824).toFixed(2)+' GB',
+ isText=f=>/^text\//.test(f.type)||/json|xml|javascript/.test(f.type)||/\.(txt|md|csv|json|log|xml|ya?ml)$/i.test(f.name);
+async function addFiles(list){
+ const c=cur();if(!c||!list.length)return;let n=0;
+ for(const f of list){try{await put('files',{id:crypto.randomUUID(),cassetteId:c.id,name:f.name||'file',type:f.type||'application/octet-stream',size:f.size,createdAt:Date.now()+n++,blob:f})}catch{toast(`Could not store “${f.name}”. Storage may be full.`);break}}
+ await load();render()}
+async function delFile(f){if(!confirm(`Delete “${f.name}”? This can’t be undone.`))return;await del('files',f.id);const u=urls.get(f.id);if(u){URL.revokeObjectURL(u);urls.delete(f.id)}await load();render()}
+async function view(f){
+ const d=h('dialog',{class:'lb','aria-label':f.name}),T=f.type;let body;
+ if(T.startsWith('image/'))body=h('img',{src:url(f),alt:f.name});
+ else if(T.startsWith('video/'))body=h('video',{src:url(f),controls:'',playsinline:''});
+ else if(T.startsWith('audio/'))body=h('audio',{src:url(f),controls:''});
+ else if(T==='application/pdf')body=h('iframe',{src:url(f),title:f.name});
+ else if(isText(f))body=h('pre',{class:'pv'},await f.blob.slice(0,200000).text()+(f.size>200000?'\n\n… preview shortened, download the file to see all of it.':''));
+ else body=h('p',{class:'empty'},'No preview for this kind of file. Download it to open it.');
+ d.append(h('div',{class:'row'},h('strong',{class:'grow'},f.name),h('button',{class:'ico',onclick:()=>d.close()},'Close')),body);
+ d.addEventListener('close',()=>d.remove());document.body.append(d);d.showModal?d.showModal():d.setAttribute('open','')}
+function fileCard(f){
+ const T=f.type,ext=f.name.includes('.')?f.name.split('.').pop().slice(0,5).toUpperCase():'FILE',inline=T.startsWith('video/')||T.startsWith('audio/');
+ return h('article',{class:'file'},
+  T.startsWith('image/')?h('button',{class:'thb','aria-label':'View '+f.name,onclick:()=>view(f)},h('img',{class:'th',src:url(f),alt:f.name,loading:'lazy'})):
+  T.startsWith('video/')?h('video',{class:'th',src:url(f),controls:'',preload:'metadata',playsinline:''}):
+  T.startsWith('audio/')?h('audio',{src:url(f),controls:'',preload:'metadata'}):
+  h('button',{class:'doc disp','aria-label':'View '+f.name,onclick:()=>view(f)},ext),
+  h('span',{class:'fn'},f.name),h('span',{class:'dim'},`${fmtSize(f.size)}, ${fmtDate(f.createdAt)}`),
+  h('div',{class:'bar'},inline?null:h('button',{onclick:()=>view(f)},'View'),h('button',{onclick:()=>dl(f.blob,f.name)},'Download'),h('button',{onclick:()=>delFile(f)},'Delete')))}
+addEventListener('dragover',e=>{if(S.view==='tape')e.preventDefault()});
+addEventListener('drop',e=>{if(S.view==='tape'){e.preventDefault();addFiles([...e.dataTransfer.files])}});
 
 /* views */
 function homeView(){
- const act=c=>{const l=memosOf(c.id).at(-1);return l?l.createdAt:c.createdAt};
+ const act=c=>Math.max(c.createdAt,...memosOf(c.id).slice(-1).map(m=>m.createdAt),...filesOf(c.id).slice(-1).map(f=>f.createdAt));
  return h('div',0,
   h('header',0,h('h1',{class:'disp'},'Diktafon'),h('button',{class:'ico',onclick:()=>go('cal')},'Calendar')),
-  S.cass.length?h('div',{class:'grid'},[...S.cass].sort((a,b)=>act(b)-act(a)).map(c=>{const ms=memosOf(c.id),l=ms.at(-1);
-   return h('button',{class:'tape',style:`--c:var(--h${c.hue})`,onclick:()=>go('tape/'+c.id)},h('span',{class:'disp name'},name(c)),h('span',{class:'meta'},pl(ms.length)+(l?`, last ${fmtDate(l.createdAt)}`:'')))})):h('p',{class:'empty'},'No tapes yet. Make one, then press Record.'),
+  S.cass.length?h('div',{class:'grid'},[...S.cass].sort((a,b)=>act(b)-act(a)).map(c=>{const ms=memosOf(c.id),l=ms.at(-1),nf=filesOf(c.id).length;
+   return h('button',{class:'tape',style:`--c:var(--h${c.hue})`,onclick:()=>go('tape/'+c.id)},h('span',{class:'disp name'},name(c)),h('span',{class:'meta'},pl(ms.length)+(nf?`, ${fl(nf)}`:'')+(l?`, last ${fmtDate(l.createdAt)}`:'')))})):h('p',{class:'empty'},'No tapes yet. Make one, then press Record.'),
   h('button',{class:'ico fab',onclick:newTape},'+ New tape'))}
 
 function tapeView(){
  const c=cur();if(!c)return h('div',0,h('header',0,h('button',{class:'ico',onclick:()=>go('')},'Back')),h('p',{class:'empty'},'This tape no longer exists.'));
- const ms=memosOf(c.id),mine=rec&&rec.cid===c.id;
+ const ms=memosOf(c.id),fs=filesOf(c.id),mine=rec&&rec.cid===c.id;
  return h('div',{style:`--c:var(--h${c.hue})`},
   h('header',0,h('button',{class:'ico','aria-label':'Back to tapes',onclick:()=>go('')},'←'),h('h1',{class:'disp'},name(c))),
-  h('div',{class:'bar'},h('button',{onclick:()=>{const l=prompt('Rename tape',c.label||'');if(l!==null)editTape(x=>x.label=l.trim()||null)}},'Rename'),h('button',{onclick:()=>editTape(x=>x.hue=(x.hue+1)%6)},'Change color'),h('button',{onclick:delTape},'Delete tape'),ms.length?h('button',{onclick:()=>S.playing?stop():play(ms,0,true)},S.playing?'Stop playback':'Play whole tape'):null),
+  h('div',{class:'bar'},h('button',{onclick:()=>{const l=prompt('Rename tape',c.label||'');if(l!==null)editTape(x=>x.label=l.trim()||null)}},'Rename'),h('button',{onclick:()=>editTape(x=>x.hue=(x.hue+1)%6)},'Change color'),h('button',{onclick:()=>document.getElementById('fin').click()},'Add files'),h('button',{onclick:delTape},'Delete tape'),ms.length?h('button',{onclick:()=>S.playing?stop():play(ms,0,true)},S.playing?'Stop playback':'Play whole tape'):null),
   h('div',{class:'recbox'},h('button',{id:'rbtn',class:'rec'+(mine?' on':''),disabled:rec&&!mine?'':null,onclick:()=>mine?rec.mr.stop():startRec()},mine?'Stop '+fmtMs(Date.now()-rec.t0):'Record'),
    SR?h('label',0,h('input',{type:'checkbox',checked:S.tx?'':null,onchange:e=>S.tx=e.target.checked}),' Add a transcript while recording'):null,
    navigator.geolocation?h('label',0,h('input',{type:'checkbox',checked:S.geo?'':null,onchange:e=>S.geo=e.target.checked}),' Save my location with each memo'):null),
@@ -141,7 +188,10 @@ function tapeView(){
    h('div',{class:'row'},h('span',{class:'disp time'},fmtTime(m.createdAt)),h('span',{class:'dim'},fmtDate(m.createdAt)),h('span',{class:'dim end'},fmtMs(m.durationMs))),
    m.transcript?h('p',{class:'tx'},m.transcript):null,
    m.loc?h('p',{class:'loc'},'Recorded at ',locLink(m.loc)):null,
-   h('div',{class:'bar'},h('button',{onclick:()=>S.playing===m.id?stop():play(ms,i,false)},S.playing===m.id?'Pause':'Play'),h('button',{onclick:()=>save(m)},'Download'),m.loc?h('button',{onclick:()=>rmLoc(m)},'Remove location'):null,h('button',{onclick:()=>delMemo(m)},'Delete'))))):h('p',{class:'empty'},'This tape is blank. Press Record to add the first memo.'))}
+   h('div',{class:'bar'},h('button',{onclick:()=>S.playing===m.id?stop():play(ms,i,false)},S.playing===m.id?'Pause':'Play'),h('button',{onclick:()=>save(m)},'Download'),m.loc?h('button',{onclick:()=>rmLoc(m)},'Remove location'):null,h('button',{onclick:()=>delMemo(m)},'Delete'))))):null,
+  fs.length?h('section',0,h('h2',{class:'disp sec'},'Files ('+fs.length+')'),h('div',{class:'files'},fs.map(fileCard))):null,
+  ms.length||fs.length?null:h('p',{class:'empty'},'This tape is blank. Press Record, or add photos, videos and other files.'),
+  h('input',{id:'fin',type:'file',multiple:'',hidden:'',onchange:e=>{addFiles([...e.target.files]);e.target.value=''}}))}
 
 function calView(){
  const M=S.month,y=M.getFullYear(),mo=M.getMonth(),wi=(l=>l.getWeekInfo?l.getWeekInfo():l.weekInfo)(new Intl.Locale(L)),first=((wi&&wi.firstDay)||7)%7,
